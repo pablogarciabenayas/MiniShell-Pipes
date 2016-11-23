@@ -2,12 +2,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include "parser.h"
 
+//Funcion para cambiar de directorio
+int changeDirectory(int argc,char** argv){
+	if(argc == 1){
+		//Solo recibe cd, accede a HOME
+		chdir(getenv("HOME"));
+	}else{
+		//Recibe una ruta absoluta
+		if(chdir(argv[1])!=0){
+			return EXIT_FAILURE;
+		}
+	}
+	return EXIT_SUCCESS;
+}
+
+
 int main(void){
+	
+	char cwd[1024];
 	char buf[1024];
 	tline * line;
-	int i,j;
 
 	printf("msh> ");	
 	while (fgets(buf, 1024, stdin)) {
@@ -15,26 +32,15 @@ int main(void){
 		line = tokenize(buf);
 		if (line==NULL) {
 			continue;
-		}
-		if (line->redirect_input != NULL) {
-			printf("redirección de entrada: %s\n", line->redirect_input);
-		}
-		if (line->redirect_output != NULL) {
-			printf("redirección de salida: %s\n", line->redirect_output);
-		}
-		if (line->redirect_error != NULL) {
-			printf("redirección de error: %s\n", line->redirect_error);
-		}
-		if (line->background) {
-			printf("comando a ejecutarse en background\n");
-		} 
-		for (i=0; i<line->ncommands; i++) {
-			printf("orden %d (%s):\n", i, line->commands[i].filename);
-			for (j=0; j<line->commands[i].argc; j++) {
-				printf("  argumento %d: %s\n", j, line->commands[i].argv[j]);
-			}
-		}
-		printf("msh> ");	
+		}else if(line->ncommands == 1 && (strcmp(line->commands[0].argv[0],"cd")==0)){
+			if(changeDirectory(line->commands[0].argc,line->commands[0].argv)!=0){
+				fprintf(stderr,"Error: Directorio no encontrado\n");
+			}else{
+				getcwd(cwd, sizeof(cwd));
+				fprintf(stdout, "Directorio de trabajo actual: %s\n", cwd);
+				}
 	}
+	printf("msh> ");
+}
 return 0;
 }
