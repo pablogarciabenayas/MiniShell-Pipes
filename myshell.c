@@ -3,7 +3,40 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <fcntl.h>
 #include "parser.h"
+
+
+
+struct rwPipe{
+	int pi[2]; 
+};
+typedef struct rwPipe rwPipe;
+
+
+//Variables globales
+rwPipe * pipesArray;
+int * pids;
+
+
+//Metodo para manejar las señales
+void signal_callback_handler(int signum)
+{
+   printf("Caught signal: %d\n",signum);
+   printf("msh> ");
+   fflush(stdout);
+}
+
+//Metodo para comprobar si un comando valido
+int isValidCommand(char * file){
+	if(file == NULL){
+		printf("no es un comando valido.\n");
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
+}
 
 //Metodo para cambiar de directorio
 int changeDirectory(int argc,char** argv){
@@ -21,7 +54,9 @@ int changeDirectory(int argc,char** argv){
 
 //Metodo para procesar los comandos
 int processCommands(int nComands,tcommand * commandsArray, char * input, char * output, char * error, int bg){
-	//procesador de comandos
+	
+	int file,i;
+	/*
 	int i,j;
 	printf("numero de comandos: %d\n",nComands);
 	printf("input: %s\n",input);
@@ -29,36 +64,82 @@ int processCommands(int nComands,tcommand * commandsArray, char * input, char * 
 	printf("error: %s\n",error);
 	printf("background: %d\n",bg);
 	for(i=0;i<nComands;i++){
-		printf("filename: %s\n",commandsArray[i].filename);
-		printf("argc: %d\n",commandsArray[i].argc);
-		for(j=0;j<commandsArray[i].argc;j++){
-			printf("%s \n",commandsArray[i].argv[j]);
+		if(isValidCommand(commandsArray[i].filename)==0){
+			printf("filename: %s\n",commandsArray[i].filename);
+			printf("argc: %d\n",commandsArray[i].argc);
+			for(j=0;j<commandsArray[i].argc;j++){
+				printf("%s \n",commandsArray[i].argv[j]);
+			}
+		}
+	}
+	*/
+	/*
+	if(nComands == 1){
+		if(isValidCommand(commandsArray[0].filename)==0){
+			execvp(commandsArray[0].argv[0],commandsArray[0].argv);
+		}
+	}
+	*/
+	
+		//Redirección de entrada.
+	if(input != NULL){
+		file = open(input,O_RDONLY);
+		if(file == -1){
+			fprintf(stderr,"%s,Error: ",input);
+			exit(1);
+		}else{
+			dup2(file,0);
+			close(file);
+		}
+	}
+	//Redireccion de salida
+	if(output != NULL){
+		file = creat(output,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if(file == -1){
+			fprintf(stderr,"%s,Error: ",output);
+			exit(1);
+		}else{
+			dup2(file,1);
+			close(file);
 		}
 	}
 	
+	//Redireccion de error
+	if(output != NULL){
+		file = creat(error,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if(file == -1){
+			fprintf(stderr,"%s,Error: ",error);
+			exit(1);
+		}else{
+
+			dup2(file,2);
+			close(file);
+		}
+	}
+	
+	//Reserva de memoria para pipes y pids
+	pipesArray = (rwPipe *) malloc (sizeof(rwPipe) * (nComands-1));
+	pids = (int *) malloc (sizeof(int) * nComands -1);
+	
+	if(nComands <1){
+		for(i=0;i<=nComands;i++){
+			pipe(pipesArray[i].pi);
+		}
+	}
+	
+	
+	
+
+	
 return EXIT_SUCCESS;
 }
-
-//Metodo para procesar un solo comando
-int processOneCommand(){
-	return 0;
-}
-
-//Metodo para procesar dos comandos
-int processTwoCommands(){
-	return 0;
-}
-
-//Metodo para procesar mas de dos comandos
-int processMoreCommands(){
-	return 0;
-}
-
 
 int main(void){
 	char cwd[1024];
 	char buf[1024];
 	tline * line;
+	signal(SIGINT, signal_callback_handler);
+	signal(SIGQUIT, signal_callback_handler);
 
 	printf("msh> ");	
 	while (fgets(buf, 1024, stdin)) {
