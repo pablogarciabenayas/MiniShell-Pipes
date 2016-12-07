@@ -11,14 +11,8 @@
 
 
 
-struct rwPipe{
-	int pi[2]; 
-};
-typedef struct rwPipe rwPipe;
-
-
 //Variables globales
-rwPipe * pipesArray;
+int ** lPipes;
 int * pids;
 
 
@@ -52,12 +46,10 @@ int changeDirectory(int argc,char** argv){
 	return EXIT_SUCCESS;
 }
 
-//Metodo para procesar los comandos
-int processCommands(int nCommands,tcommand * commandsArray, char * input, char * output, char * error, int bg){
+//Metodo para redireccionar
+int redirect(char * input, char * output, char * error){
+	int fd;
 	
-	int fd,i,status;
-	pid_t pid;
-
 	//Redirección de entrada.
 	if(input != NULL){
 		fd = open(input,O_RDONLY);
@@ -87,17 +79,28 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 			printf("%s, Error: fallo en apertura de fichero.\n",error);
 			exit(1);
 		}else{
-
 			dup2(fd,2);
 			close(fd);
 		}
 	}
+	return EXIT_SUCCESS;
+}
+
+
+
+//Metodo para procesar los comandos
+int processCommands(int nCommands,tcommand * commandsArray, char * input, char * output, char * error, int bg){
+	
+	int i,j,status;
+	pid_t pid;
+
+	
 	if(nCommands == 1){
 		//Llega un solo comando
 		pid = fork();
-		
 		if(pid == 0){
 		//hijo
+			redirect(input,output,error);
 			if(isValidCommand(commandsArray[0].filename)==0){
 				execvp(commandsArray[0].argv[0],commandsArray[0].argv);
 				exit(0);
@@ -115,36 +118,85 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 		}
 	}else if(nCommands > 1){ 
 		//Llega mas de un comando
-		/*
-			//Reserva de memoria para pipes y pids
-			pipesArray = (rwPipe *) malloc (sizeof(rwPipe) * (nCommands-1));
-			pids = (int *) malloc (sizeof(int) * nCommands -1);
-			
-			if(nCommands >1){
-				for(i=0;i<=nCommands;i++){
-					pipe(pipesArray[i].pi);
-				}
-			}
-
-			for(i=0;i<nCommands;i++){
-				pid = fork();
-				if(pid < 0){
-					fprintf(stderr,"Fallo el fork.\n%s\n",strerror(errno));
-					//devolver fallo
-					return EXIT_FAILURE;
-				}else{
-					pids[i]=pid;
-				}
-			}
 		
-		//Proceso padre
-		if(pid != 0){
-			//wait(NULL);
-		}else{
-		//Proceso hijo
+		//Reserva de memoria para pipes y pids
+		lPipes = (int **) malloc (sizeof(int) * (nCommands-1));
+		pids = (int *) malloc (sizeof(int) * nCommands -1);
 		
+		//Inicializamos los pipes
+		for(i=0;i<nCommands-1;i++){
+			lPipes[i]= (int *) malloc (2*sizeof(int));
+			pipe(lPipes[i]);
 		}
-		*/
+		
+		//Bucle
+		for(i=0;i<nCommands;i++){
+			pids[i]=fork();
+			
+			if(pids[i]==0){
+				//Es hijo
+				if(i==0){
+					//Es el primer hijo
+					redirect(input,NULL,NULL);
+					dup2(lPipes[i][1],1);
+					
+					for(j=0;j<nCommands-1;j++){
+						if(j==0){
+							close(lPipes[j][0]);
+						}else{
+							close(lPipes[j][0]);
+							close(lPipes[j][1]);
+						}
+					}
+				}else if(i==nCommands-1){
+					//Es el ultimo hijo
+					redirect(NULL,output,error);
+					dup2(lPipes[i-1][0],0);
+					
+					for(j=0;j<nCommands-1;j++){
+						if(j== i-1){
+							close(lPipes[j][1]);
+						}else{
+							close(lPipes[j][0]);
+							close(lPipes[j][1]);
+						}
+					}
+				}else{
+					//Es cualquier otro hijo
+					dup2(lPipes[i][1],1);
+					dup2(lPipes[i-1][0],0);
+					for(j=0;j<nCommands-1;j++){
+						if(j==i){
+							close(lPipes[j][0]);
+						}else if(j==i-1){
+							close(lPipes[j][1]);
+						}else{
+							close(lPipes[j][0]);
+							close(lPipes[j][1]);
+						}
+					}
+				}
+				execvp(commandsArray[i].argv[0],commandsArray[i].argv);
+				exit(0);
+			}
+		}
+		//Cerrar pipes
+		for(i=0;i<nCommands-1;i++){
+			close(lPipes[i][0]);
+			close(lPipes[i][1]);
+		}
+		
+		//Esperar a que terminen los hijos
+		for(i=0;i<nCommands;i++){
+			waitpid(pids[i],NULL,0);
+		}
+		
+		//Liberar memoria
+		for(i=0;i<nCommands-1;i++){
+			free(lPipes[i]);
+		}
+		free(lPipes);
+		free(pids);
 	}	
 return EXIT_SUCCESS;
 }
@@ -156,7 +208,7 @@ int main(void){
 	signal(SIGINT, signal_callback_handler);
 	signal(SIGQUIT, signal_callback_handler);
 
-	printf("msh> ");	
+	printf("msh> ");
 	while (fgets(buf, 1024, stdin)) {
 		//Tokenizacion de la linea leida que contiene comandos
 		line = tokenize(buf);
@@ -174,16 +226,11 @@ int main(void){
 				}
 		}else if(line->ncommands >= 1 && (strcmp(line->commands[0].argv[0],"cd")!=0)){
 			//Si llega un comando o mas, se llama al metodo processCommands
-			/*
-			if(processCommands(line->ncommands,line->commands,line->redirect_input,line->redirect_output,line->redirect_error,line->background) != 0){
-				fprintf(stderr,"Error");
-			}
-			*/
 			processCommands(line->ncommands,line->commands,line->redirect_input,line->redirect_output,line->redirect_error,line->background);
 		}
+		printf("msh> ");
 		//free(pipesArray);
 		//free(pids);
-	printf("msh> ");
 }
 return 0;
 }
