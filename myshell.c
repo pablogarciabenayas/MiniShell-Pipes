@@ -19,8 +19,7 @@ int * pids;
 //Metodo para manejar las señales
 void signal_callback_handler(int signum)
 {
-   printf("Caught signal: %d\n",signum);
-   printf("msh> ");
+   printf("\nmsh> ");
    fflush(stdout);
 }
 
@@ -76,7 +75,7 @@ int redirect(char * input, char * output, char * error){
 	if(error != NULL){
 		fd = creat(error,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 		if(fd == -1){
-			printf("%s, Error: fallo en apertura de fichero.\n",error);
+			printf("%s, Error: fallo en apertura o creacion de fichero.\n",error);
 			exit(1);
 		}else{
 			dup2(fd,2);
@@ -105,7 +104,7 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 				execvp(commandsArray[0].argv[0],commandsArray[0].argv);
 				exit(0);
 			}else{
-				printf("%s, Error: no es un comando valido.\n",commandsArray[0].argv[0]);
+				fprintf(stderr,"%s: no se encuentra el mandato.\n",commandsArray[0].argv[0]);
 				return EXIT_FAILURE;
 			}
 		}else{
@@ -113,7 +112,7 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 			wait (&status);
 			if (WIFEXITED(status) != 0)
 				if (WEXITSTATUS(status) != 0)
-					printf("El comando no se ejecutó correctamente\n");
+					printf("El comando no se ejecutó correctamente.\n");
 			return EXIT_SUCCESS;
 		}
 	}else if(nCommands > 1){ 
@@ -129,17 +128,15 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 			pipe(lPipes[i]);
 		}
 		
-		//Bucle
+		//Proceso de los comandos
 		for(i=0;i<nCommands;i++){
 			pids[i]=fork();
-			
 			if(pids[i]==0){
 				//Es hijo
 				if(i==0){
 					//Es el primer hijo
 					redirect(input,NULL,NULL);
 					dup2(lPipes[i][1],1);
-					
 					for(j=0;j<nCommands-1;j++){
 						if(j==0){
 							close(lPipes[j][0]);
@@ -176,8 +173,13 @@ int processCommands(int nCommands,tcommand * commandsArray, char * input, char *
 						}
 					}
 				}
-				execvp(commandsArray[i].argv[0],commandsArray[i].argv);
-				exit(0);
+				if(isValidCommand(commandsArray[i].filename)==0){
+					execvp(commandsArray[i].argv[0],commandsArray[i].argv);
+					exit(0);
+				}else{
+					fprintf(stderr,"%s: no se encontro el mandato.\n", commandsArray[i].argv[0]);
+					exit(1);
+				}
 			}
 		}
 		//Cerrar pipes
@@ -229,8 +231,6 @@ int main(void){
 			processCommands(line->ncommands,line->commands,line->redirect_input,line->redirect_output,line->redirect_error,line->background);
 		}
 		printf("msh> ");
-		//free(pipesArray);
-		//free(pids);
 }
 return 0;
 }
