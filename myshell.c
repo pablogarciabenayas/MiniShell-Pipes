@@ -209,9 +209,9 @@ int main(void){
 	tline * line;
 	signal(SIGINT, signal_callback_handler);
 	signal(SIGQUIT, signal_callback_handler);
-
 	printf("msh> ");
 	while (fgets(buf, 1024, stdin)) {
+		
 		//Tokenizacion de la linea leida que contiene comandos
 		line = tokenize(buf);
 		
